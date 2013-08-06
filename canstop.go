@@ -28,9 +28,22 @@ func (self *runner) RunMe(g Graceful) {
 	t := &tomb.Tomb{}
 	self.jobs = append(self.jobs, t)
 	go func() {
-		defer t.Done()
+		defer markDone(t)
 		g.Run(t)
 	}()
+}
+
+func markDone(t *tomb.Tomb) {
+	select {
+	case _ = <-t.Dying():
+		{
+			// do nothing because that means the Graceful took care to call .Done()
+		}
+	default:
+		{
+			t.Done()
+		}
+	}
 }
 
 func (self *runner) Stop() {

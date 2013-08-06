@@ -23,6 +23,7 @@ func (self *testGraceful) Run(t *tomb.Tomb) {
 		select {
 		case _ = <-t.Dying():
 			{
+				t.Done()
 				return
 			}
 		default:
