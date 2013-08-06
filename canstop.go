@@ -35,7 +35,7 @@ func (self *runner) RunMe(g Graceful) {
 
 func markDone(t *tomb.Tomb) {
 	select {
-	case _ = <-t.Dying():
+	case _ = <-t.Dead():
 		{
 			// do nothing because that means the Graceful took care to call .Done()
 		}
