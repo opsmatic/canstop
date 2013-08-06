@@ -19,7 +19,6 @@ type testGraceful struct {
 }
 
 func (self *testGraceful) Run(t *tomb.Tomb) {
-	defer t.Done()
 	for {
 		select {
 		case _ = <-t.Dying():
@@ -40,6 +39,6 @@ func (s *MySuite) TestRunner(c *C) {
 	r.RunMe(g)
 	time.Sleep(500 * time.Millisecond)
 	r.Stop()
-	c.Check(g.counter > 0, Equals, true)
-	c.Check(g.counter < 10, Equals, true)
+	c.Check(g.counter > 3, Equals, true)
+	c.Check(g.counter < 6, Equals, true)
 }

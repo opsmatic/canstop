@@ -15,17 +15,18 @@ type Runner interface {
 
 func NewRunner() Runner {
 	return &runner{
-		make([]tomb.Tomb, 0),
+		make([]*tomb.Tomb, 0),
 	}
 }
 
 type runner struct {
-	jobs []tomb.Tomb
+	jobs []*tomb.Tomb
 }
 
 // This could just take func(*Tomb) but an interface feels cleaner
 func (self *runner) RunMe(g Graceful) {
 	t := &tomb.Tomb{}
+	self.jobs = append(self.jobs, t)
 	go func() {
 		defer t.Done()
 		g.Run(t)
