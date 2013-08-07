@@ -2,6 +2,7 @@ package canstop
 
 import (
 	"launchpad.net/tomb"
+	"log"
 	"sync"
 	"time"
 )
@@ -65,6 +66,7 @@ func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
 	case _ = <-timeoutChan:
 		{
 			t.Killf("Job took too long to terminate, forcing termination after %d\n", timeout)
+			t.Done()
 		}
 	}
 	group.Done()
@@ -75,5 +77,11 @@ func (self *runner) Stop() {
 	for _, t := range self.jobs {
 		self.Add(1)
 		go stopJob(t, self.maxWait, self.WaitGroup)
+	}
+	for _, t := range self.jobs {
+		<-t.Dead()
+		if err := t.Err(); err != nil {
+			log.Printf("Ungraceful stop: %s\n", err)
+		}
 	}
 }
