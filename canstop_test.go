@@ -2,7 +2,6 @@ package canstop
 
 import (
 	. "launchpad.net/gocheck"
-	"launchpad.net/tomb"
 	"testing"
 	"time"
 )
@@ -18,16 +17,8 @@ type testGraceful struct {
 	counter int
 }
 
-func (self *testGraceful) Run(t *tomb.Tomb) {
-	for {
-		select {
-		case _ = <-t.Dying():
-			{
-				t.Done()
-				return
-			}
-		default:
-		}
+func (self *testGraceful) Run(c *Control) {
+	for !c.IsPoisoned() {
 		self.counter++
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -35,7 +26,7 @@ func (self *testGraceful) Run(t *tomb.Tomb) {
 
 type testUnGraceful struct{}
 
-func (self *testUnGraceful) Run(t *tomb.Tomb) {
+func (self *testUnGraceful) Run(c *Control) {
 	for {
 		time.Sleep(5 * time.Hour)
 	}
@@ -43,9 +34,9 @@ func (self *testUnGraceful) Run(t *tomb.Tomb) {
 
 func (s *MySuite) TestRunner(c *C) {
 	// really rough timing-based test, but deal with it
-	r := NewRunner(5 * time.Second)
+	r := NewManager(5 * time.Second)
 	g := &testGraceful{0}
-	r.RunMe(g)
+	r.Manage(g.Run, "graceful")
 	time.Sleep(500 * time.Millisecond)
 	r.Stop()
 	c.Check(g.counter > 3, Equals, true)
@@ -53,13 +44,12 @@ func (s *MySuite) TestRunner(c *C) {
 }
 
 func (s *MySuite) TestTimeout(c *C) {
-	r := NewRunner(100 * time.Millisecond)
+	r := NewManager(100 * time.Millisecond)
 	g := &testUnGraceful{}
-	r.RunMe(g)
-	r.Stop()
+	r.Manage(g.Run, "ungraceful")
 	done := make(chan bool)
 	go func() {
-		r.Wait()
+		r.Stop()
 		done <- true
 	}()
 	timeout := time.After(150 * time.Millisecond)

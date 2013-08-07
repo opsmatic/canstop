@@ -7,19 +7,25 @@ import (
 	"time"
 )
 
-type Graceful interface {
-	Run(t *tomb.Tomb)
-}
+// a service unit managed by Manager
+type Managed func(t *Control)
 
-type Runner interface {
-	RunMe(g Graceful)
+/**
+ * The singleton that manages the lifecycles of service units
+ */
+type Manager interface {
+	Manage(f Managed, name string)
 	Stop()
-	Wait()
+	Poison() chan bool
 }
 
-func NewRunner(maxWait time.Duration) Runner {
+/**
+ * Create a new instance of a Manager with the specified maximum time allowed
+ * for service units to clean up after themselves at shutdown
+ */
+func NewManager(maxWait time.Duration) Manager {
 	r := &runner{
-		&sync.WaitGroup{}, make([]*tomb.Tomb, 0), maxWait,
+		&sync.WaitGroup{}, make(map[*tomb.Tomb]string), maxWait, make(chan bool),
 	}
 	// avoid race: Wait() being called before jobs have had a chance to Add()
 	r.Add(1)
@@ -28,25 +34,30 @@ func NewRunner(maxWait time.Duration) Runner {
 
 type runner struct {
 	*sync.WaitGroup
-	jobs    []*tomb.Tomb
+	jobs    map[*tomb.Tomb]string
 	maxWait time.Duration
+	poison  chan bool
 }
 
-// This could just take func(*Tomb) but an interface feels cleaner
-func (self *runner) RunMe(g Graceful) {
-	t := &tomb.Tomb{}
-	self.jobs = append(self.jobs, t)
+// Manage a service unit; name is used for accounting
+func (self *runner) Manage(f Managed, name string) {
+	c := NewControl(self.WaitGroup, self.poison)
+	self.jobs[c.Tomb] = name
 	go func() {
-		defer markDone(t)
-		g.Run(t)
+		defer markDone(c.Tomb)
+		f(c)
 	}()
 }
 
+/**
+ * a little convenience method to get around tomb.Done() panicking if called
+ * twice
+ */
 func markDone(t *tomb.Tomb) {
 	select {
 	case _ = <-t.Dead():
 		{
-			// do nothing because that means the Graceful took care to call .Done()
+			// do nothing because that means the Managed took care to call .Done()
 		}
 	default:
 		{
@@ -55,8 +66,10 @@ func markDone(t *tomb.Tomb) {
 	}
 }
 
+/**
+ * stop a job, giving it some time to clean up
+ */
 func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
-	t.Kill(nil)
 	timeoutChan := time.After(timeout)
 	select {
 	case _ = <-t.Dead():
@@ -72,16 +85,25 @@ func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
 	group.Done()
 }
 
+/**
+ * Stop and wait
+ */
 func (self *runner) Stop() {
-	self.Done()
-	for _, t := range self.jobs {
+	close(self.poison)
+	for t := range self.jobs {
 		self.Add(1)
 		go stopJob(t, self.maxWait, self.WaitGroup)
 	}
-	for _, t := range self.jobs {
+	for t, name := range self.jobs {
 		<-t.Dead()
 		if err := t.Err(); err != nil {
-			log.Printf("Ungraceful stop: %s\n", err)
+			log.Printf("Ungraceful stop for service %s: %s\n", name, err)
 		}
 	}
+	self.Done()
+	self.Wait()
+}
+
+func (self *runner) Poison() chan bool {
+	return self.poison
 }

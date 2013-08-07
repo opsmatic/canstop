@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/opsmatic/canstop"
-	"launchpad.net/tomb"
 	"log"
 	"math"
 	"math/rand"
@@ -20,13 +19,13 @@ func NewWorker(ch chan int64) *Worker {
 	return &Worker{ch, 0}
 }
 
-func (self *Worker) Run(t *tomb.Tomb) {
+func (self *Worker) Run(c *canstop.Control) {
 	for {
 		select {
-		case _ = <-t.Dying():
+		case _ = <-c.Poison:
 			{
 				log.Printf("Clean shut down of worker. Found %d matches\n", self.found)
-				t.Done()
+				c.Done()
 				return
 			}
 		default:
@@ -45,20 +44,20 @@ type Producer struct {
 	Work chan int64
 }
 
-func (self *Producer) Run(t *tomb.Tomb) {
+func (self *Producer) Run(c *canstop.Control) {
 	for {
 		self.Work <- rand.Int63()
 	}
 }
 
 func main() {
-	r := canstop.NewRunner(5 * time.Second)
+	m := canstop.NewManager(5 * time.Second)
 	work := make(chan int64)
 	w := NewWorker(work)
 	p := &Producer{work}
 
-	r.RunMe(w)
-	r.RunMe(p)
+	m.Manage(w.Run, "worker")
+	m.Manage(p.Run, "producer")
 
 	// run until we get a signal to stop
 	c := make(chan os.Signal)
@@ -66,6 +65,5 @@ func main() {
 	<-c
 
 	// send cancellation to all our jobs and wait on them to complete
-	r.Stop()
-	r.Wait()
+	m.Stop()
 }
