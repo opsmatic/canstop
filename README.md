@@ -36,6 +36,15 @@ func (self *YourThingToManage) Run(t *tomb.Tomb) {
 }
 ```
 
+Now just pass that thing to your `Runner` and watch it **GOOOOOO**
+
+```go
+thing := &YourThingToManage{}
+r.RunMe(thing)
+// probably some code to catch singals to know when to call r.Stop()
+r.Wait()
+```
+
 ### Example
 
 There's an example in the `example` dir. It has 2 long running processes, a
