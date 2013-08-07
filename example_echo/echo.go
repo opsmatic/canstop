@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+/**
+ * This is a re-implementation of @rcrowley's example using canstop
+ * http://rcrowley.org/articles/golang-graceful-stop.html
+ */
+
 type Service struct {
 	listener *net.TCPListener
 }
