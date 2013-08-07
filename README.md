@@ -11,6 +11,7 @@ It is inspired by:
 * My work at UA with Neil Walker on making services clean up after themselves
 * Dropwizard's [`lifecycle`](https://github.com/codahale/dropwizard/tree/master/dropwizard-lifecycle/src/main/java/com/codahale/dropwizard/lifecycle)
 * The need to do graceful shutdown/cleanup across multiple Go projects
+* Lots of long talks with [Richard Crowley](http://rcrowley.org/articles/golang-graceful-stop.html)
 
 ### Usage
 
