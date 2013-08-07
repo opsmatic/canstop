@@ -2,6 +2,8 @@ package canstop
 
 import (
 	"launchpad.net/tomb"
+	"sync"
+	"time"
 )
 
 type Graceful interface {
@@ -11,16 +13,22 @@ type Graceful interface {
 type Runner interface {
 	RunMe(g Graceful)
 	Stop()
+	Wait()
 }
 
-func NewRunner() Runner {
-	return &runner{
-		make([]*tomb.Tomb, 0),
+func NewRunner(maxWait time.Duration) Runner {
+	r := &runner{
+		&sync.WaitGroup{}, make([]*tomb.Tomb, 0), maxWait,
 	}
+	// avoid race: Wait() being called before jobs have had a chance to Add()
+	r.Add(1)
+	return r
 }
 
 type runner struct {
-	jobs []*tomb.Tomb
+	*sync.WaitGroup
+	jobs    []*tomb.Tomb
+	maxWait time.Duration
 }
 
 // This could just take func(*Tomb) but an interface feels cleaner
@@ -46,9 +54,26 @@ func markDone(t *tomb.Tomb) {
 	}
 }
 
+func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
+	t.Kill(nil)
+	timeoutChan := time.After(timeout)
+	select {
+	case _ = <-t.Dead():
+		{
+			markDone(t)
+		}
+	case _ = <-timeoutChan:
+		{
+			t.Killf("Job took too long to terminate, forcing termination after %d\n", timeout)
+		}
+	}
+	group.Done()
+}
+
 func (self *runner) Stop() {
+	self.Done()
 	for _, t := range self.jobs {
-		t.Kill(nil)
-		<-t.Dead()
+		self.Add(1)
+		go stopJob(t, self.maxWait, self.WaitGroup)
 	}
 }
