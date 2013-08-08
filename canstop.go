@@ -25,7 +25,7 @@ type Manager interface {
  */
 func NewManager(maxWait time.Duration) Manager {
 	r := &runner{
-		&sync.WaitGroup{}, make(map[*tomb.Tomb]string), maxWait, make(chan bool),
+		&sync.WaitGroup{}, make(map[*tomb.Tomb]string), maxWait, make(chan bool), &sync.Once{},
 	}
 	// avoid race: Wait() being called before jobs have had a chance to Add()
 	r.Add(1)
@@ -37,6 +37,7 @@ type runner struct {
 	jobs    map[*tomb.Tomb]string
 	maxWait time.Duration
 	poison  chan bool
+	once    *sync.Once
 }
 
 // Manage a service unit; name is used for accounting
@@ -89,6 +90,10 @@ func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
  * Stop and wait
  */
 func (self *runner) Stop() {
+	self.once.Do(self.stopBody)
+}
+
+func (self *runner) stopBody() {
 	close(self.poison)
 	for t := range self.jobs {
 		self.Add(1)

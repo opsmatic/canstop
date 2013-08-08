@@ -63,3 +63,10 @@ func (s *MySuite) TestTimeout(c *C) {
 		}
 	}
 }
+func (s *MySuite) TestDoubleStop(c *C) {
+	m := NewManager(1)
+
+	// the second call will panic if the protection isn't set correctly
+	m.Stop()
+	m.Stop()
+}
