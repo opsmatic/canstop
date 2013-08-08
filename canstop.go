@@ -24,7 +24,7 @@ type Manager interface {
  * for service units to clean up after themselves at shutdown
  */
 func NewManager(maxWait time.Duration) Manager {
-	r := &runner{
+	r := &manager{
 		&sync.WaitGroup{}, make(map[*tomb.Tomb]string), maxWait, make(chan bool), &sync.Once{},
 	}
 	// avoid race: Wait() being called before jobs have had a chance to Add()
@@ -32,7 +32,7 @@ func NewManager(maxWait time.Duration) Manager {
 	return r
 }
 
-type runner struct {
+type manager struct {
 	*sync.WaitGroup
 	jobs    map[*tomb.Tomb]string
 	maxWait time.Duration
@@ -41,7 +41,7 @@ type runner struct {
 }
 
 // Manage a service unit; name is used for accounting
-func (self *runner) Manage(f Managed, name string) {
+func (self *manager) Manage(f Managed, name string) {
 	c := NewControl(self.WaitGroup, self.poison)
 	self.jobs[c.Tomb] = name
 	go func() {
@@ -89,11 +89,11 @@ func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
 /**
  * Stop and wait
  */
-func (self *runner) Stop() {
+func (self *manager) Stop() {
 	self.once.Do(self.stopBody)
 }
 
-func (self *runner) stopBody() {
+func (self *manager) stopBody() {
 	close(self.poison)
 	for t := range self.jobs {
 		self.Add(1)
@@ -109,6 +109,6 @@ func (self *runner) stopBody() {
 	self.Wait()
 }
 
-func (self *runner) Poison() chan bool {
+func (self *manager) Poison() chan bool {
 	return self.poison
 }

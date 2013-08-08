@@ -34,22 +34,22 @@ func (self *testUnGraceful) Run(c *Control) {
 
 func (s *MySuite) TestRunner(c *C) {
 	// really rough timing-based test, but deal with it
-	r := NewManager(5 * time.Second)
+	m := NewManager(5 * time.Second)
 	g := &testGraceful{0}
-	r.Manage(g.Run, "graceful")
+	m.Manage(g.Run, "graceful")
 	time.Sleep(500 * time.Millisecond)
-	r.Stop()
+	m.Stop()
 	c.Check(g.counter > 3, Equals, true)
 	c.Check(g.counter < 6, Equals, true)
 }
 
 func (s *MySuite) TestTimeout(c *C) {
-	r := NewManager(100 * time.Millisecond)
+	m := NewManager(100 * time.Millisecond)
 	g := &testUnGraceful{}
-	r.Manage(g.Run, "ungraceful")
+	m.Manage(g.Run, "ungraceful")
 	done := make(chan bool)
 	go func() {
-		r.Stop()
+		m.Stop()
 		done <- true
 	}()
 	timeout := time.After(150 * time.Millisecond)
