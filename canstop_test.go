@@ -17,39 +17,41 @@ type testGraceful struct {
 	counter int
 }
 
-func (self *testGraceful) Run(l *Lifecycle) {
-	for !l.IsInterrupted() {
+func (self *testGraceful) Run(l Lifecycle) error {
+	for !IsInterrupted(l) {
 		self.counter++
 		time.Sleep(100 * time.Millisecond)
 	}
+	return nil
 }
 
 type testUnGraceful struct{}
 
-func (self *testUnGraceful) Run(c *Lifecycle) {
+func (self *testUnGraceful) Run(l Lifecycle) error {
 	for {
 		time.Sleep(5 * time.Hour)
 	}
+	return nil
 }
 
 func (s *MySuite) TestRunner(c *C) {
 	// really rough timing-based test, but deal with it
-	m := NewManager(5 * time.Second)
+	m := NewLifecycle()
 	g := &testGraceful{0}
-	m.Manage(g.Run, "graceful")
+	go m.ManageService(g.Run, "graceful")
 	time.Sleep(500 * time.Millisecond)
-	m.Stop()
+	m.Stop(100 * time.Millisecond)
 	c.Check(g.counter > 3, Equals, true)
 	c.Check(g.counter < 6, Equals, true)
 }
 
 func (s *MySuite) TestTimeout(c *C) {
-	m := NewManager(100 * time.Millisecond)
+	m := NewLifecycle()
 	g := &testUnGraceful{}
-	m.Manage(g.Run, "ungraceful")
+	go m.ManageService(g.Run, "ungraceful")
 	done := make(chan bool)
 	go func() {
-		m.Stop()
+		m.Stop(100 * time.Millisecond)
 		done <- true
 	}()
 	timeout := time.After(150 * time.Millisecond)
@@ -64,9 +66,9 @@ func (s *MySuite) TestTimeout(c *C) {
 	}
 }
 func (s *MySuite) TestDoubleStop(c *C) {
-	m := NewManager(1)
+	l := NewLifecycle()
 
 	// the second call will panic if the protection isn't set correctly
-	m.Stop()
-	m.Stop()
+	l.StopAndWait()
+	l.StopAndWait()
 }

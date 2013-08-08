@@ -1,114 +1,125 @@
 package canstop
 
 import (
-	"launchpad.net/tomb"
 	"log"
+	"math"
 	"sync"
 	"time"
 )
 
-// a service unit managed by Manager
-type Managed func(t *Lifecycle)
+type Manageable func(t Lifecycle) error
 
-/**
- * The singleton that manages the lifecycles of service units
- */
-type Manager interface {
-	Manage(f Managed, name string)
-	Stop()
+type Lifecycle interface {
+	ManageService(Manageable, string)
+	ManageSession(Manageable)
 	Interrupt() chan bool
+	StopAndWait()
+	Stop(time.Duration)
 }
 
 /**
- * Create a new instance of a Manager with the specified maximum time allowed
- * for service units to clean up after themselves at shutdown
+ * convenience method for checking for interrupt for non-select{} usecases
  */
-func NewManager(maxWait time.Duration) Manager {
-	r := &manager{
-		&sync.WaitGroup{}, make(map[*tomb.Tomb]string), maxWait, make(chan bool), &sync.Once{},
-	}
-	// avoid race: Wait() being called before jobs have had a chance to Add()
-	r.Add(1)
-	return r
-}
-
-type manager struct {
-	*sync.WaitGroup
-	jobs      map[*tomb.Tomb]string
-	maxWait   time.Duration
-	interrupt chan bool
-	once      *sync.Once
-}
-
-// Manage a service unit; name is used for accounting
-func (self *manager) Manage(f Managed, name string) {
-	c := NewLifecycle(self.WaitGroup, self.interrupt)
-	self.jobs[c.Tomb] = name
-	go func() {
-		defer markDone(c.Tomb)
-		f(c)
-	}()
-}
-
-/**
- * a little convenience method to get around tomb.Done() panicking if called
- * twice
- */
-func markDone(t *tomb.Tomb) {
+func IsInterrupted(l Lifecycle) bool {
 	select {
-	case _ = <-t.Dead():
-		{
-			// do nothing because that means the Managed took care to call .Done()
-		}
+	case <-l.Interrupt():
+		return true
 	default:
-		{
-			t.Done()
-		}
+		return false
 	}
 }
 
-/**
- * stop a job, giving it some time to clean up
- */
-func stopJob(t *tomb.Tomb, timeout time.Duration, group *sync.WaitGroup) {
-	timeoutChan := time.After(timeout)
-	select {
-	case _ = <-t.Dead():
-		{
-			markDone(t)
-		}
-	case _ = <-timeoutChan:
-		{
-			t.Killf("Job took too long to terminate, forcing termination after %d\n", timeout)
-			t.Done()
-		}
-	}
-	group.Done()
+func NewLifecycle() Lifecycle {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	return &lifecycle{wg, &sync.Once{}, make(map[chan bool]string), make(chan bool)}
 }
 
-/**
- * Stop and wait
- */
-func (self *manager) Stop() {
-	self.once.Do(self.stopBody)
+type lifecycle struct {
+	*sync.WaitGroup
+	*sync.Once
+	services  map[chan bool]string
+	interrupt chan bool
 }
 
-func (self *manager) stopBody() {
-	close(self.interrupt)
-	for t := range self.jobs {
-		self.Add(1)
-		go stopJob(t, self.maxWait, self.WaitGroup)
-	}
-	for t, name := range self.jobs {
-		<-t.Dead()
-		if err := t.Err(); err != nil {
-			log.Printf("Ungraceful stop for service %s: %s\n", name, err)
-		}
+func (self *lifecycle) ManageSession(f Manageable) {
+	self.Add(1)
+	err := f(self)
+	if err != nil {
+		log.Printf("Session ended uncleanly: %s\n")
 	}
 	self.Done()
-	self.Wait()
 }
 
-func (self *manager) Interrupt() chan bool {
+func (self *lifecycle) ManageService(f Manageable, name string) {
+	imFinished := make(chan bool)
+	self.services[imFinished] = name
+	self.Add(1)
+	var err error
+	// services should be restarted if they stop running for any reason
+	// hopefully f itself is a loop that is also reading from the interrupt
+	// channel; we should only hit the top of this loop on errors/panics
+	for !IsInterrupted(self) {
+		err = f(self)
+		if err != nil {
+			log.Printf("Service %s crashed with error: %s", name, err)
+		}
+	}
+	if err != nil {
+		log.Printf("Service %s exited with an error: %s", name, err)
+	}
+	close(imFinished)
+}
+
+func (self *lifecycle) Interrupt() chan bool {
 	return self.interrupt
+}
+
+func (self *lifecycle) StopAndWait() {
+	self.Stop(math.MaxInt16 * time.Hour)
+}
+
+func waitOnWaitGroup(wg *sync.WaitGroup) (ch chan bool) {
+	ch = make(chan bool)
+	waiter := func(ch chan bool, wg *sync.WaitGroup) {
+		wg.Wait()
+		ch <- true
+	}
+	go waiter(ch, wg)
+	return ch
+}
+
+func (self *lifecycle) Stop(maxWait time.Duration) {
+	self.Once.Do(func() {
+		self.stopBody(maxWait)
+	})
+}
+
+func (self *lifecycle) stopBody(maxWait time.Duration) {
+	close(self.interrupt)
+	self.WaitGroup.Done()
+	waiter := waitOnWaitGroup(self.WaitGroup)
+	select {
+	case <-waiter:
+		{
+			return
+		}
+	case <-time.After(maxWait):
+		{
+			laggards := make([]string, 0)
+			for finishedChan, service := range self.services {
+				select {
+				case <-finishedChan:
+					continue
+				default:
+					{
+						laggards = append(laggards, service)
+					}
+				}
+			}
+			if len(laggards) > 0 {
+				log.Printf("The following services did not terminate in a timely fashion: %s\n", laggards)
+			}
+		}
+	}
 }
