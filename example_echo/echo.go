@@ -19,8 +19,8 @@ type Service struct {
 	listener *net.TCPListener
 }
 
-func (self *Service) Run(c *canstop.Control) {
-	for !c.IsPoisoned() {
+func (self *Service) Run(l *canstop.Lifecycle) {
+	for !l.IsInterrupted() {
 		self.listener.SetDeadline(time.Now().Add(5 * time.Second))
 		conn, err := self.listener.AcceptTCP()
 		if err != nil {
@@ -33,10 +33,10 @@ func (self *Service) Run(c *canstop.Control) {
 
 		session := &Session{conn}
 		// calling Run causes the session.Run method to be executed in a goroutine
-		// with the Control instance as an argument (providing access to the Poison channel).
+		// with the Lifecycle instance as an argument (providing access to the Interrupt channel).
 		// This also guarantees that any transaction already taking place on the connection
 		// will have a chance to complete
-		c.Run(session.Run)
+		l.RunSession(session.Run)
 	}
 }
 
@@ -44,9 +44,9 @@ type Session struct {
 	conn *net.TCPConn
 }
 
-func (self *Session) Run(c *canstop.Control) {
+func (self *Session) Run(l *canstop.Lifecycle) {
 	defer self.conn.Close()
-	for !c.IsPoisoned() {
+	for !l.IsInterrupted() {
 		self.conn.SetDeadline(time.Now().Add(5 * time.Second))
 		buf := make([]byte, 4096)
 		if _, err := self.conn.Read(buf); err != nil {

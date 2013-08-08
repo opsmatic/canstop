@@ -8,7 +8,7 @@ import (
 )
 
 // a service unit managed by Manager
-type Managed func(t *Control)
+type Managed func(t *Lifecycle)
 
 /**
  * The singleton that manages the lifecycles of service units
@@ -16,7 +16,7 @@ type Managed func(t *Control)
 type Manager interface {
 	Manage(f Managed, name string)
 	Stop()
-	Poison() chan bool
+	Interrupt() chan bool
 }
 
 /**
@@ -34,15 +34,15 @@ func NewManager(maxWait time.Duration) Manager {
 
 type manager struct {
 	*sync.WaitGroup
-	jobs    map[*tomb.Tomb]string
-	maxWait time.Duration
-	poison  chan bool
-	once    *sync.Once
+	jobs      map[*tomb.Tomb]string
+	maxWait   time.Duration
+	interrupt chan bool
+	once      *sync.Once
 }
 
 // Manage a service unit; name is used for accounting
 func (self *manager) Manage(f Managed, name string) {
-	c := NewControl(self.WaitGroup, self.poison)
+	c := NewLifecycle(self.WaitGroup, self.interrupt)
 	self.jobs[c.Tomb] = name
 	go func() {
 		defer markDone(c.Tomb)
@@ -94,7 +94,7 @@ func (self *manager) Stop() {
 }
 
 func (self *manager) stopBody() {
-	close(self.poison)
+	close(self.interrupt)
 	for t := range self.jobs {
 		self.Add(1)
 		go stopJob(t, self.maxWait, self.WaitGroup)
@@ -109,6 +109,6 @@ func (self *manager) stopBody() {
 	self.Wait()
 }
 
-func (self *manager) Poison() chan bool {
-	return self.poison
+func (self *manager) Interrupt() chan bool {
+	return self.interrupt
 }

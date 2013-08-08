@@ -10,17 +10,17 @@ import (
  * when to shut down. It embeds a Tomb so that they can also record unfortunate
  * outcomes
  */
-type Control struct {
+type Lifecycle struct {
 	*tomb.Tomb
 	wg *sync.WaitGroup
 
-	//the poison pill channel that gets closed to signal shutdown
-	Poison chan bool
+	//the interrupt pill channel that gets closed to signal shutdown
+	Interrupt chan bool
 }
 
-func NewControl(wg *sync.WaitGroup, poison chan bool) *Control {
-	return &Control{
-		&tomb.Tomb{}, wg, poison,
+func NewLifecycle(wg *sync.WaitGroup, interrupt chan bool) *Lifecycle {
+	return &Lifecycle{
+		&tomb.Tomb{}, wg, interrupt,
 	}
 }
 
@@ -30,7 +30,7 @@ func NewControl(wg *sync.WaitGroup, poison chan bool) *Control {
  * one-shot jobs. See Run() for longer-running goroutines, such as a
  * listen/accept loop or a queue consumer
  */
-func (self *Control) RunSimple(f func()) {
+func (self *Lifecycle) RunSimpleSession(f func()) {
 	go func() {
 		self.wg.Add(1)
 		f()
@@ -40,11 +40,11 @@ func (self *Control) RunSimple(f func()) {
 
 /**
  * Run a function (presumably a loop), passing self as an argument, giving
- * access to the Poison channel. Thus a long running loop, such as a listen/
- * accept loop, can check the Poison channel between accepting connections.
+ * access to the Interrupt channel. Thus a long running loop, such as a listen/
+ * accept loop, can check the Interrupt channel between accepting connections.
  */
-func (self *Control) Run(f func(c *Control)) {
-	self.RunSimple(func() {
+func (self *Lifecycle) RunSession(f func(c *Lifecycle)) {
+	self.RunSimpleSession(func() {
 		f(self)
 	})
 }
@@ -53,9 +53,9 @@ func (self *Control) Run(f func(c *Control)) {
  * Used to check if shutdown has been requested; intended for loops that are
  * not selecting from multiple goroutines, such as listen/accept loops
  */
-func (self *Control) IsPoisoned() bool {
+func (self *Lifecycle) IsInterrupted() bool {
 	select {
-	case <-self.Poison:
+	case <-self.Interrupt:
 		return true
 	default:
 		return false
