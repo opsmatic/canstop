@@ -7,60 +7,40 @@ import (
 	"time"
 )
 
-type Manageable func(t Lifecycle) error
+type Manageable func(t *Lifecycle) error
 
-type Lifecycle interface {
-	ManageService(Manageable, string)
-	ManageSession(Manageable)
-	Interrupt() chan bool
-	StopAndWait()
-	Stop(time.Duration)
-}
-
-/**
- * convenience method for checking for interrupt for non-select{} usecases
- */
-func IsInterrupted(l Lifecycle) bool {
-	select {
-	case <-l.Interrupt():
-		return true
-	default:
-		return false
-	}
-}
-
-func NewLifecycle() Lifecycle {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	return &lifecycle{wg, &sync.Once{}, make(map[chan bool]string), make(chan bool)}
-}
-
-type lifecycle struct {
-	*sync.WaitGroup
-	*sync.Once
+type Lifecycle struct {
+	wg        *sync.WaitGroup
+	once      *sync.Once
 	services  map[chan bool]string
 	interrupt chan bool
 }
 
-func (self *lifecycle) ManageSession(f Manageable) {
-	self.Add(1)
-	defer self.Done()
+func NewLifecycle() *Lifecycle {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	return &Lifecycle{wg, &sync.Once{}, make(map[chan bool]string), make(chan bool)}
+}
+
+func (self *Lifecycle) ManageSession(f Manageable) {
+	self.wg.Add(1)
+	defer self.wg.Done()
 	err := f(self)
 	if err != nil {
 		log.Printf("Session ended uncleanly: %s\n")
 	}
 }
 
-func (self *lifecycle) ManageService(f Manageable, name string) {
+func (self *Lifecycle) ManageService(f Manageable, name string) {
 	imFinished := make(chan bool)
 	self.services[imFinished] = name
-	self.Add(1)
-	defer self.Done()
+	self.wg.Add(1)
+	defer self.wg.Done()
 	var err error
 	// services should be restarted if they stop running for any reason
 	// hopefully f itself is a loop that is also reading from the interrupt
 	// channel; we should only hit the top of this loop on errors/panics
-	for !IsInterrupted(self) {
+	for !self.IsInterrupted() {
 		err = f(self)
 		if err != nil {
 			log.Printf("Service %s crashed with error: %s", name, err)
@@ -72,11 +52,11 @@ func (self *lifecycle) ManageService(f Manageable, name string) {
 	close(imFinished)
 }
 
-func (self *lifecycle) Interrupt() chan bool {
+func (self *Lifecycle) Interrupt() <-chan bool {
 	return self.interrupt
 }
 
-func (self *lifecycle) StopAndWait() {
+func (self *Lifecycle) StopAndWait() {
 	self.Stop(math.MaxInt16 * time.Hour)
 }
 
@@ -90,16 +70,16 @@ func waitOnWaitGroup(wg *sync.WaitGroup) (ch chan bool) {
 	return ch
 }
 
-func (self *lifecycle) Stop(maxWait time.Duration) {
-	self.Once.Do(func() {
+func (self *Lifecycle) Stop(maxWait time.Duration) {
+	self.once.Do(func() {
 		self.stopBody(maxWait)
 	})
 }
 
-func (self *lifecycle) stopBody(maxWait time.Duration) {
+func (self *Lifecycle) stopBody(maxWait time.Duration) {
 	close(self.interrupt)
-	self.WaitGroup.Done()
-	waiter := waitOnWaitGroup(self.WaitGroup)
+	self.wg.Done()
+	waiter := waitOnWaitGroup(self.wg)
 	select {
 	case <-waiter:
 		{
@@ -122,5 +102,17 @@ func (self *lifecycle) stopBody(maxWait time.Duration) {
 				log.Printf("The following services did not terminate in a timely fashion: %s\n", laggards)
 			}
 		}
+	}
+}
+
+/**
+ * convenience method for checking for interrupt for non-select{} usecases
+ */
+func (l *Lifecycle) IsInterrupted() bool {
+	select {
+	case <-l.Interrupt():
+		return true
+	default:
+		return false
 	}
 }

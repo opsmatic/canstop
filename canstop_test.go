@@ -17,8 +17,8 @@ type testGraceful struct {
 	counter int
 }
 
-func (self *testGraceful) Run(l Lifecycle) error {
-	for !IsInterrupted(l) {
+func (self *testGraceful) Run(l *Lifecycle) error {
+	for !l.IsInterrupted() {
 		self.counter++
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -27,7 +27,7 @@ func (self *testGraceful) Run(l Lifecycle) error {
 
 type testUnGraceful struct{}
 
-func (self *testUnGraceful) Run(l Lifecycle) error {
+func (self *testUnGraceful) Run(l *Lifecycle) error {
 	for {
 		time.Sleep(5 * time.Hour)
 	}

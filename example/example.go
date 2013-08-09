@@ -19,17 +19,8 @@ func NewWorker(ch chan int64) *Worker {
 	return &Worker{ch, 0}
 }
 
-func (self *Worker) Run(c *canstop.Control) {
-	for {
-		select {
-		case _ = <-c.Poison:
-			{
-				log.Printf("Clean shut down of worker. Found %d matches\n", self.found)
-				c.Done()
-				return
-			}
-		default:
-		}
+func (self *Worker) Run(l *canstop.Lifecycle) error {
+	for !l.IsInterrupted() {
 		// do the important work
 		work := <-self.Work
 		if math.Mod(float64(work), float64(4)) == 0 {
@@ -38,26 +29,29 @@ func (self *Worker) Run(c *canstop.Control) {
 		}
 		time.Sleep(1 * time.Second)
 	}
+	log.Printf("Orderly shutdown of Worker. Found %d matches\n", self.found)
+	return nil
 }
 
 type Producer struct {
 	Work chan int64
 }
 
-func (self *Producer) Run(c *canstop.Control) {
+func (self *Producer) Run(l *canstop.Lifecycle) error {
 	for {
 		self.Work <- rand.Int63()
 	}
+	return nil
 }
 
 func main() {
-	m := canstop.NewManager(5 * time.Second)
+	l := canstop.NewLifecycle()
 	work := make(chan int64)
 	w := NewWorker(work)
 	p := &Producer{work}
 
-	m.Manage(w.Run, "worker")
-	m.Manage(p.Run, "producer")
+	go l.ManageService(w.Run, "worker")
+	go l.ManageService(p.Run, "producer")
 
 	// run until we get a signal to stop
 	c := make(chan os.Signal)
@@ -65,5 +59,5 @@ func main() {
 	<-c
 
 	// send cancellation to all our jobs and wait on them to complete
-	m.Stop()
+	l.Stop(5 * time.Second)
 }

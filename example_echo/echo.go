@@ -19,7 +19,7 @@ type Service struct {
 	listener *net.TCPListener
 }
 
-func (self *Service) Run(l *canstop.Lifecycle) {
+func (self *Service) Run(l *canstop.Lifecycle) (e error) {
 	for !l.IsInterrupted() {
 		self.listener.SetDeadline(time.Now().Add(5 * time.Second))
 		conn, err := self.listener.AcceptTCP()
@@ -36,15 +36,17 @@ func (self *Service) Run(l *canstop.Lifecycle) {
 		// with the Lifecycle instance as an argument (providing access to the Interrupt channel).
 		// This also guarantees that any transaction already taking place on the connection
 		// will have a chance to complete
-		l.RunSession(session.Run)
+		l.ManageSession(session.Run)
 	}
+	log.Printf("Orderly shutdown of listener %s\n", self.listener.Addr())
+	return
 }
 
 type Session struct {
 	conn *net.TCPConn
 }
 
-func (self *Session) Run(l *canstop.Lifecycle) {
+func (self *Session) Run(l *canstop.Lifecycle) (e error) {
 	defer self.conn.Close()
 	for !l.IsInterrupted() {
 		self.conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -61,6 +63,8 @@ func (self *Session) Run(l *canstop.Lifecycle) {
 			return
 		}
 	}
+	log.Printf("Orderly shutdown of connection %s\n", self.conn.RemoteAddr())
+	return
 }
 
 func main() {
@@ -74,10 +78,10 @@ func main() {
 	}
 	log.Println("listening on", listener.Addr())
 
-	r := canstop.NewManager(5 * time.Second)
+	l := canstop.NewLifecycle()
 
 	svc := &Service{listener}
-	r.Manage(svc.Run, "echo listener")
+	go l.ManageService(svc.Run, "echo listener")
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
@@ -85,5 +89,5 @@ func main() {
 	log.Println(<-ch)
 
 	// Stop the service gracefully.
-	r.Stop()
+	l.StopAndWait()
 }
