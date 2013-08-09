@@ -2,6 +2,7 @@ package canstop
 
 import (
 	. "launchpad.net/gocheck"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -71,4 +72,45 @@ func (s *MySuite) TestDoubleStop(c *C) {
 	// the second call will panic if the protection isn't set correctly
 	l.StopAndWait()
 	l.StopAndWait()
+}
+
+func (s *MySuite) TestPanicSession(c *C) {
+	l := NewLifecycle()
+
+	var counter int32 = 0
+
+	go l.Session(func(l *Lifecycle) (e error) {
+		for i := 0; i < 10; i++ {
+			atomic.AddInt32(&counter, 1)
+			time.Sleep(10 * time.Millisecond)
+		}
+		return
+	})
+	go l.Session(func(l *Lifecycle) (e error) {
+		panic("Immediate panic, oh god!!")
+		return
+	})
+
+	l.Stop(100 * time.Millisecond)
+	c.Check(atomic.LoadInt32(&counter) > 5, Equals, true)
+}
+
+func (s *MySuite) TestPanicService(c *C) {
+	l := NewLifecycle()
+
+	var counter int32 = 0
+	go l.Service(func(l *Lifecycle) (e error) {
+		for i := 0; !l.IsInterrupted() && i < 10; i++ {
+			// add a sleep so that tests don't hang due to hot loop
+			shouldPanic := (atomic.LoadInt32(&counter) == 5)
+			atomic.AddInt32(&counter, 1)
+			if shouldPanic {
+				panic("Let's interrupt this story")
+			}
+		}
+		return
+	}, "panicker")
+	time.Sleep(100 * time.Millisecond)
+	l.StopAndWait()
+	c.Check(atomic.LoadInt32(&counter) > 6, Equals, true)
 }
