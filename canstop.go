@@ -24,12 +24,12 @@ func NewLifecycle() *Lifecycle {
 	reg := make(chan chan string)
 	services := make(map[chan string]string)
 	// listen for services registering
-	go func(reg chan chan string) {
+	go func() {
 		for {
 			ch := <-reg
 			services[ch] = <-ch
 		}
-	}(reg)
+	}()
 	return &Lifecycle{wg, &sync.Once{}, services, make(chan bool), reg}
 }
 
