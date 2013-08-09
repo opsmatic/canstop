@@ -44,17 +44,18 @@ type lifecycle struct {
 
 func (self *lifecycle) ManageSession(f Manageable) {
 	self.Add(1)
+	defer self.Done()
 	err := f(self)
 	if err != nil {
 		log.Printf("Session ended uncleanly: %s\n")
 	}
-	self.Done()
 }
 
 func (self *lifecycle) ManageService(f Manageable, name string) {
 	imFinished := make(chan bool)
 	self.services[imFinished] = name
 	self.Add(1)
+	defer self.Done()
 	var err error
 	// services should be restarted if they stop running for any reason
 	// hopefully f itself is a loop that is also reading from the interrupt
