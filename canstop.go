@@ -22,7 +22,7 @@ func NewLifecycle() *Lifecycle {
 	return &Lifecycle{wg, &sync.Once{}, make(map[chan bool]string), make(chan bool)}
 }
 
-func (self *Lifecycle) ManageSession(f Manageable) {
+func (self *Lifecycle) Session(f Manageable) {
 	self.wg.Add(1)
 	defer self.wg.Done()
 	err := f(self)
@@ -31,7 +31,7 @@ func (self *Lifecycle) ManageSession(f Manageable) {
 	}
 }
 
-func (self *Lifecycle) ManageService(f Manageable, name string) {
+func (self *Lifecycle) Service(f Manageable, name string) {
 	imFinished := make(chan bool)
 	self.services[imFinished] = name
 	self.wg.Add(1)

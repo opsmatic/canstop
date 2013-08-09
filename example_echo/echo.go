@@ -36,7 +36,7 @@ func (self *Service) Run(l *canstop.Lifecycle) (e error) {
 		// with the Lifecycle instance as an argument (providing access to the Interrupt channel).
 		// This also guarantees that any transaction already taking place on the connection
 		// will have a chance to complete
-		l.ManageSession(session.Run)
+		l.Session(session.Run)
 	}
 	log.Printf("Orderly shutdown of listener %s\n", self.listener.Addr())
 	return
@@ -81,7 +81,7 @@ func main() {
 	l := canstop.NewLifecycle()
 
 	svc := &Service{listener}
-	go l.ManageService(svc.Run, "echo listener")
+	go l.Service(svc.Run, "echo listener")
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)

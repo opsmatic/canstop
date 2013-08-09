@@ -50,8 +50,8 @@ func main() {
 	w := NewWorker(work)
 	p := &Producer{work}
 
-	go l.ManageService(w.Run, "worker")
-	go l.ManageService(p.Run, "producer")
+	go l.Service(w.Run, "worker")
+	go l.Service(p.Run, "producer")
 
 	// run until we get a signal to stop
 	c := make(chan os.Signal)

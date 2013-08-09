@@ -38,7 +38,7 @@ func (s *MySuite) TestRunner(c *C) {
 	// really rough timing-based test, but deal with it
 	m := NewLifecycle()
 	g := &testGraceful{0}
-	go m.ManageService(g.Run, "graceful")
+	go m.Service(g.Run, "graceful")
 	time.Sleep(500 * time.Millisecond)
 	m.Stop(100 * time.Millisecond)
 	c.Check(g.counter > 3, Equals, true)
@@ -48,7 +48,7 @@ func (s *MySuite) TestRunner(c *C) {
 func (s *MySuite) TestTimeout(c *C) {
 	m := NewLifecycle()
 	g := &testUnGraceful{}
-	go m.ManageService(g.Run, "ungraceful")
+	go m.Service(g.Run, "ungraceful")
 	done := make(chan bool)
 	go func() {
 		m.Stop(100 * time.Millisecond)
