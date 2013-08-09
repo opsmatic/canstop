@@ -119,8 +119,10 @@ func (self *Lifecycle) stopBody(maxWait time.Duration) {
 			for finishedChan, service := range self.services {
 				select {
 				case _, closed := <-finishedChan:
-					if closed {
-						continue
+					{
+						if closed {
+							continue
+						}
 					}
 				default:
 					{
@@ -136,13 +138,17 @@ func (self *Lifecycle) stopBody(maxWait time.Duration) {
 }
 
 /**
- * convenience method for checking for interrupt for non-select{} usecases
+ * convenience method for checking for interrupt for non-sregelect{} usecases
  */
 func (l *Lifecycle) IsInterrupted() bool {
 	select {
 	case <-l.Interrupt():
-		return true
+		{
+			return true
+		}
 	default:
-		return false
+		{
+			return false
+		}
 	}
 }
