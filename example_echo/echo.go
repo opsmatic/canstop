@@ -32,11 +32,9 @@ func (self *Service) Run(l *canstop.Lifecycle) (e error) {
 		log.Println(conn)
 
 		session := &Session{conn}
-		// calling Run causes the session.Run method to be executed in a goroutine
-		// with the Lifecycle instance as an argument (providing access to the Interrupt channel).
-		// This also guarantees that any transaction already taking place on the connection
-		// will have a chance to complete
-		l.Session(session.Run)
+		// running the session using Lifecycle guarantees that any transaction
+		// already taking place on the connection will have a chance to complete
+		go l.Session(session.Run)
 	}
 	log.Printf("Orderly shutdown of listener %s\n", self.listener.Addr())
 	return
