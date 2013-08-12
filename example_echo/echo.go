@@ -19,22 +19,19 @@ type Service struct {
 	listener *net.TCPListener
 }
 
-func (self *Service) Run(l *canstop.Lifecycle) (e error) {
+func (self *Service) Run(l *canstop.Lifecycle) (err error) {
 	for !l.IsInterrupted() {
-		self.listener.SetDeadline(time.Now().Add(5 * time.Second))
-		conn, err := self.listener.AcceptTCP()
-		if err != nil {
-			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
-				continue
-			}
-			log.Println(err)
+		if conn, err, timeout := canstop.AcceptTCPWithTimeout(self.listener, 5*time.Second); timeout {
+			continue
+		} else if err != nil {
+			log.Printf("Error accepting connection: %s", err)
+			continue
+		} else {
+			session := &Session{conn}
+			// running the session using Lifecycle guarantees that any transaction
+			// already taking place on the connection will have a chance to complete
+			go l.Session(session.Run)
 		}
-		log.Println(conn)
-
-		session := &Session{conn}
-		// running the session using Lifecycle guarantees that any transaction
-		// already taking place on the connection will have a chance to complete
-		go l.Session(session.Run)
 	}
 	log.Printf("Orderly shutdown of listener %s\n", self.listener.Addr())
 	return
@@ -47,12 +44,10 @@ type Session struct {
 func (self *Session) Run(l *canstop.Lifecycle) (e error) {
 	defer self.conn.Close()
 	for !l.IsInterrupted() {
-		self.conn.SetDeadline(time.Now().Add(5 * time.Second))
 		buf := make([]byte, 4096)
-		if _, err := self.conn.Read(buf); err != nil {
-			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
-				continue
-			}
+		if _, err, timeout := canstop.ReadWithTimeout(self.conn, buf, 5*time.Second); timeout {
+			continue
+		} else if err != nil {
 			log.Printf("Error reading: %s\n", err)
 			return
 		}
