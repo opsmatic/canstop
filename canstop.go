@@ -33,6 +33,11 @@ func NewLifecycle() *Lifecycle {
 	return &Lifecycle{wg, &sync.Once{}, services, make(chan bool), reg}
 }
 
+// Session allows a single session to run with the ability to check for
+// cancellation.  Sessions are expected to be plentiful and to come and go many
+// times during the course of a program's life time. They are not accounted for
+// the same way that services are, but are nonetheless given a chance to clean
+// up at shutdown time. A good example of a session is a single TCP connection.
 func (self *Lifecycle) Session(f Manageable) {
 	self.wg.Add(1)
 	var err error
@@ -48,19 +53,10 @@ func (self *Lifecycle) Session(f Manageable) {
 	err = f(self)
 }
 
-func loopCalmly(l *Lifecycle, f Manageable, name string) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("Service %s panicked: %s\n", name, r)
-		}
-		runtime.Gosched() // break up panic hotloops
-	}()
-	err := f(l)
-	if err != nil {
-		log.Printf("Service %s errored: %s\n", name, err)
-	}
-}
-
+// Service allows a background process that is expected to run for the duration
+// of a program to run with the ability to check for cancellation. A good
+// example of a service is the "accept loop" of a network service, which
+// perpetually accepts incoming connections.
 func (self *Lifecycle) Service(f Manageable, name string) {
 	// we pass a channel back to the Lifecycle registration goroutine
 	// over which we communicate the name of the registering service.
@@ -79,6 +75,7 @@ func (self *Lifecycle) Service(f Manageable, name string) {
 	}
 }
 
+// Interrupt returns the channel which is closed to signal cancellation.
 func (self *Lifecycle) Interrupt() <-chan bool {
 	return self.interrupt
 }
@@ -102,6 +99,20 @@ func (self *Lifecycle) Stop(maxWait time.Duration) {
 	self.once.Do(func() {
 		self.stopBody(maxWait)
 	})
+}
+
+// convenience method for checking for interrupt for non-select{} usecases
+func (l *Lifecycle) IsInterrupted() bool {
+	select {
+	case <-l.Interrupt():
+		{
+			return true
+		}
+	default:
+		{
+			return false
+		}
+	}
 }
 
 func (self *Lifecycle) stopBody(maxWait time.Duration) {
@@ -137,18 +148,17 @@ func (self *Lifecycle) stopBody(maxWait time.Duration) {
 	}
 }
 
-/**
- * convenience method for checking for interrupt for non-sregelect{} usecases
- */
-func (l *Lifecycle) IsInterrupted() bool {
-	select {
-	case <-l.Interrupt():
-		{
-			return true
+// loopCalmly is the body of a service loop with panic protection and error
+// reporting
+func loopCalmly(l *Lifecycle, f Manageable, name string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Service %s panicked: %s\n", name, r)
 		}
-	default:
-		{
-			return false
-		}
+		runtime.Gosched() // break up panic hotloops
+	}()
+	err := f(l)
+	if err != nil {
+		log.Printf("Service %s errored: %s\n", name, err)
 	}
 }
