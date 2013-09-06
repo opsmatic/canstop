@@ -4,7 +4,7 @@ import this project yet, as I the API likely _WILL_ change in the near future.
 ### Can't Stop Won't Stop.. Or Can You?
 
 This is a fairly simple package for managing the lifecycle of daemon processes
-within a Go program. It builds a bit on top of the [`tomb`](http://launchpad.net/tomb) package.
+within a Go program.
 
 ##### Motivation
 
