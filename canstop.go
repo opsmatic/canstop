@@ -4,6 +4,7 @@ import (
 	"log"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -44,9 +45,11 @@ func (self *Lifecycle) Session(f Manageable) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("Session ended in panic: %s\n", r)
+			log.Printf("Stack: %s", debug.Stack())
 		}
 		if err != nil {
 			log.Printf("Session ended in error: %s\n", err)
+			log.Printf("Stack: %s", debug.Stack())
 		}
 		self.wg.Done()
 	}()
@@ -154,11 +157,13 @@ func loopCalmly(l *Lifecycle, f Manageable, name string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("Service %s panicked: %s\n", name, r)
+			log.Printf("Stack: %s", debug.Stack())
 		}
 		runtime.Gosched() // break up panic hotloops
 	}()
 	err := f(l)
 	if err != nil {
 		log.Printf("Service %s errored: %s\n", name, err)
+		log.Printf("Stack: %s", debug.Stack())
 	}
 }
