@@ -49,7 +49,6 @@ func (self *Lifecycle) Session(f Manageable) {
 		}
 		if err != nil {
 			log.Printf("Session ended in error: %s\n", err)
-			log.Printf("Stack: %s", debug.Stack())
 		}
 		self.wg.Done()
 	}()
@@ -164,6 +163,5 @@ func loopCalmly(l *Lifecycle, f Manageable, name string) {
 	err := f(l)
 	if err != nil {
 		log.Printf("Service %s errored: %s\n", name, err)
-		log.Printf("Stack: %s", debug.Stack())
 	}
 }

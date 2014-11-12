@@ -1,10 +1,11 @@
 package canstop
 
 import (
-	. "launchpad.net/gocheck"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	. "launchpad.net/gocheck"
 )
 
 // boilerplate
@@ -101,7 +102,6 @@ func (s *MySuite) TestPanicService(c *C) {
 	var counter int32 = 0
 	go l.Service(func(l *Lifecycle) (e error) {
 		for i := 0; !l.IsInterrupted() && i < 10; i++ {
-			// add a sleep so that tests don't hang due to hot loop
 			shouldPanic := (atomic.LoadInt32(&counter) == 5)
 			atomic.AddInt32(&counter, 1)
 			if shouldPanic {
