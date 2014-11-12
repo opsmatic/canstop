@@ -112,5 +112,21 @@ func (s *MySuite) TestPanicService(c *C) {
 	}, "panicker")
 	time.Sleep(100 * time.Millisecond)
 	l.StopAndWait()
-	c.Check(atomic.LoadInt32(&counter) > 6, Equals, true)
+	c.Check(atomic.LoadInt32(&counter) > 2, Equals, true)
+}
+
+func (s *MySuite) TestServiceBackoff(c *C) {
+	l := NewLifecycle()
+
+	var counter int32 = 0
+	go l.Service(func(l *Lifecycle) (e error) {
+		for i := 0; !l.IsInterrupted() && i < 10; i++ {
+			atomic.AddInt32(&counter, 1)
+			panic("Let's interrupt this story")
+		}
+		return
+	}, "panicker")
+	time.Sleep(5 * time.Second)
+	l.StopAndWait()
+	c.Check(atomic.LoadInt32(&counter) < 10, Equals, true)
 }

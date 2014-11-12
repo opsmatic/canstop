@@ -1,6 +1,7 @@
 package canstop
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"runtime"
@@ -8,6 +9,15 @@ import (
 	"sync"
 	"time"
 )
+
+type PanicError struct {
+	p     interface{}
+	stack []byte
+}
+
+func (self PanicError) Error() string {
+	return fmt.Sprintf("panic: '%s' at:\n%s", self.p, string(self.stack))
+}
 
 type Manageable func(t *Lifecycle) error
 
@@ -44,8 +54,7 @@ func (self *Lifecycle) Session(f Manageable) {
 	var err error
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Session ended in panic: %s\n", r)
-			log.Printf("Stack: %s", debug.Stack())
+			err = PanicError{r, debug.Stack()}
 		}
 		if err != nil {
 			log.Printf("Session ended in error: %s\n", err)
@@ -72,8 +81,14 @@ func (self *Lifecycle) Service(f Manageable, name string) {
 	// services should be restarted if they stop running for any reason
 	// hopefully f itself is a loop that is also reading from the interrupt
 	// channel; we should only hit the top of this loop on errors/panics
+	ec := NewErrorCounter(5)
 	for !self.IsInterrupted() {
-		loopCalmly(self, f, name)
+		time.Sleep(ec.CalculateDelay())
+		err := loopCalmly(self, f, name)
+		if err != nil {
+			log.Printf("error in service %s: %s", name, err)
+			ec.AddTimestamp(time.Now())
+		}
 	}
 }
 
@@ -152,16 +167,13 @@ func (self *Lifecycle) stopBody(maxWait time.Duration) {
 
 // loopCalmly is the body of a service loop with panic protection and error
 // reporting
-func loopCalmly(l *Lifecycle, f Manageable, name string) {
+func loopCalmly(l *Lifecycle, f Manageable, name string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Service %s panicked: %s\n", name, r)
-			log.Printf("Stack: %s", debug.Stack())
+			err = PanicError{r, debug.Stack()}
 		}
 		runtime.Gosched() // break up panic hotloops
 	}()
-	err := f(l)
-	if err != nil {
-		log.Printf("Service %s errored: %s\n", name, err)
-	}
+	err = f(l)
+	return
 }
